@@ -7,7 +7,7 @@
 (* :Date: 2016-11-19 *)
 
 (* :Package Version: 0.1 *)
-(* :Mathematica Version: *)
+(* :Mathematica Version: 10.0 *)
 (* :Copyright: (c) 2016 szhorvat *)
 (* :Keywords: *)
 (* :Discussion: *)
@@ -35,6 +35,14 @@ MRun[MCode[code], version]\
 
 MCode::usage = "MCode[code]";
 
+NBHideInput::usage = "NBHideInput[nb]";
+NBDeleteOutputByTag::usage = "NBDeleteOutputByTag[nb]";
+NBDeleteChangeTimes::usage = "NBDeleteChangeTimes[nb]";
+NBRemoveURL::usage = "NBRemoveURL[nb]";
+NBResetWindow::usage = "NBResetWindow[nb]";
+NBSetOptions::usage = "NBSetOptions[opt -> val][nb]";
+NBDisableSpellCheck::usage = "NBDisableSpellCheck[nb]";
+NBDeleteCellTags::usage = "NBDeleteCellTags[tags][nb]";
 
 Begin["`Flags`"]
 
@@ -195,6 +203,66 @@ MRun[code : _MCode, ver_String : ""] :=
       If[versions === {}, Return[$Failed]];
       MRun[code, First[versions]]
     ]
+
+
+NBHideInput[nb_] :=
+    ReplaceAll[
+      nb,
+      CellGroupData[
+        cells : {
+          Cell[___, CellTags -> (tags_ /; Not@FreeQ[tags, "HideInput"]), ___],
+          Cell[___]
+        }, _ | PatternSequence[]] :> CellGroupData[cells, {2}]
+    ]
+
+
+NBDeleteOutputByTag[nb_, tag_ : "DeleteOutput"] :=
+    ReplaceAll[
+      nb,
+      Cell@CellGroupData[
+        {
+          in : Cell[___, CellTags -> (tags_ /; Not@FreeQ[tags, tag]), ___],
+          Cell[___]
+        }, _ | PatternSequence[]] :> in
+    ]
+
+
+NBDeleteChangeTimes[nb_] := DeleteCases[nb, CellChangeTimes -> _, Infinity]
+
+
+NBRemoveURL[nb_] :=
+    ReplaceAll[
+      nb,
+      {start___, Delimiter, "\"Copy web URL\"" :> _, "\"Go to web URL\"" :> _} :> {start}
+    ]
+
+
+NBResetWindow[nb_] := DeleteCases[nb, (WindowMargins|WindowSize) -> _, Infinity]
+
+
+NBSetOptions[opt : (_Rule | _RuleDelayed)][nb_] :=
+    Module[{},
+      If[Not@MemberQ[Keys@Options[nb], First[opt]],
+        Append[nb, opt],
+        Replace[nb, (Rule[First[opt], _]|RuleDelayed[First[opt], _]) -> opt,  {1}]
+      ]
+    ]
+NBSetOptions[opts : {Repeated[_Rule | _RuleDelayed, {2, Infinity}]}][nb_] := Fold[NBSetOptions[#2][#1]&, nb, opts]
+NBSetOptions[opts : Repeated[_Rule | _RuleDelayed, {2, Infinity}]] := NBSetOptions[{opts}]
+NBSetOptions[][nb_] := nb
+
+
+NBDisableSpellCheck[nb_] := NBSetOptions[System`ShowAutoSpellCheck -> False][nb]
+
+
+NBDeleteCellTags[tags : {___String}][nb_, tags : {___String}] := Fold[NBDeleteCellTags[#2][#1]&, nb, tags]
+NBDeleteCellTags[tag_String][nb_] :=
+    ReplaceAll[
+      DeleteCases[nb, CellTags -> (tag | {tag}), Infinity],
+      (CellTags -> (tags_List /; MemberQ[tags, tag])) :>
+          CellTags -> DeleteCases[tags, tag]
+    ]
+
 
 
 End[] (* `Private` *)
