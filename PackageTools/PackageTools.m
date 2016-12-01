@@ -35,14 +35,22 @@ MRun[MCode[code], version]\
 
 MCode::usage = "MCode[code]";
 
+RewriteNotebook::usage =
+    "RewriteNotebook[f][file]\n" <>
+    "RewriteNotebook[f][infile, outfile]";
+
 NBHideInput::usage = "NBHideInput[nb]";
 NBDeleteOutputByTag::usage = "NBDeleteOutputByTag[nb]";
-NBDeleteChangeTimes::usage = "NBDeleteChangeTimes[nb]";
+NBRemoveChangeTimes::usage = "NBRemoveChangeTimes[nb]";
 NBRemoveURL::usage = "NBRemoveURL[nb]";
 NBResetWindow::usage = "NBResetWindow[nb]";
 NBSetOptions::usage = "NBSetOptions[opt -> val][nb]";
 NBDisableSpellCheck::usage = "NBDisableSpellCheck[nb]";
 NBDeleteCellTags::usage = "NBDeleteCellTags[tags][nb]";
+NBRemoveOptions::usage = "NBRemoveOptions[{opts}][nb]";
+NBRemoveCellOptions::usage = "NBRemoveCellOptions[{opts}][nb]";
+NBFEProcess::usage = "NBFEProcess[f][nb]";
+
 
 Begin["`Flags`"]
 
@@ -57,11 +65,14 @@ End[] (* `Flags` *)
 Begin["`Private`"]
 
 
+(********** Evaluating using slave kernels **********)
+
+
 $packageFile      = $InputFileName;
 $packageDirectory = DirectoryName[$InputFileName];
 $packagePath      = DirectoryName[$packageDirectory];
 
-$result;
+$result; (* slave kernels assign the result to this symbol before sending it back *)
 
 
 MKernelQ[MKernel[asc_?AssociationQ]] := Sort@Keys[asc] === Sort[{"Executable", "Version", "InstallationDirectory"}]
@@ -205,6 +216,55 @@ MRun[code : _MCode, ver_String : ""] :=
     ]
 
 
+(********** Notebook processing **********)
+
+fileQ[_String | File[_String]] = True
+fileQ[_] = False
+
+RewriteNotebook[f_][file_?fileQ] := RewriteNotebook[f][file, file]
+
+RewriteNotebook[f_][infile_?fileQ, outfile_?fileQ] :=
+    UsingFrontEnd@Module[{nb, res},
+      CurrentValue[$FrontEndSession, DynamicUpdating] = False;
+      Block[{$Context = "System`"},
+        nb = Import[infile, "NB"]
+      ];
+      nb = f[nb];
+      res = Export[outfile, nb, "NB"];
+      CurrentValue[$FrontEndSession, DynamicUpdating] = Inherited;
+      res
+    ]
+
+
+(********** Notebook expression transformations **********)
+
+(* Is it an option *)
+optQ[_Symbol -> _] = True
+optQ[_Symbol :> _] = True
+optQ[_String -> _] = True
+optQ[_String :> _] = True
+optQ[_] = False
+
+(* make sure this won't be accidentally interpreted as a rule by functions like Replace *)
+optPattern[sym_Symbol] := (Rule|RuleDelayed)[sym|SymbolName[sym], _]
+optPattern[str_String] := (Rule|RuleDelayed)[Symbol[str]|str, _]
+
+(* experimental *)
+NBFEProcess[f_][nb_] :=
+    UsingFrontEnd@Module[{handle, res},
+      CurrentValue[$FrontEndSession, DynamicUpdating] = False;
+      handle = NotebookPut[nb, Visible -> False];
+      f[handle];
+      Block[
+        {$Context = "System`"},
+        res = NotebookGet[handle];
+      ];
+      NotebookClose[handle];
+      CurrentValue[$FrontEndSession, DynamicUpdating] = Inherited;
+      res
+    ]
+
+
 NBHideInput[nb_] :=
     ReplaceAll[
       nb,
@@ -227,7 +287,14 @@ NBDeleteOutputByTag[nb_, tag_ : "DeleteOutput"] :=
     ]
 
 
-NBDeleteChangeTimes[nb_] := DeleteCases[nb, CellChangeTimes -> _, Infinity]
+NBRemoveCellOptions[opt : _Symbol|_String] := NBRemoveCellOptions[{opt}]
+NBRemoveCellOptions[opts: {(_Symbol|_String)..}][nb_] :=
+    ReplaceAll[nb,
+      Cell[start___, Alternatives @@ (optPattern /@ opts), end___] :> Cell[start, end]
+    ]
+
+
+NBRemoveChangeTimes = NBRemoveCellOptions[CellChangeTimes]
 
 
 NBRemoveURL[nb_] :=
@@ -237,30 +304,31 @@ NBRemoveURL[nb_] :=
     ]
 
 
-NBResetWindow[nb_] := DeleteCases[nb, (WindowMargins|WindowSize) -> _, Infinity]
+NBRemoveOptions[optname : _Symbol|_String] := NBRemoveOptions[{optname}]
+NBRemoveOptions[optnames : {(_Symbol|_String)..}][nb_] := DeleteCases[nb, Alternatives @@ (optPattern /@ optnames)]
 
 
-NBSetOptions[opt : (_Rule | _RuleDelayed)][nb_] :=
+NBResetWindow = NBRemoveOptions[{WindowMargins, WindowSize}]
+
+
+NBSetOptions[opt_?optQ][nb_] :=
     Module[{},
       If[Not@MemberQ[Keys@Options[nb], First[opt]],
         Append[nb, opt],
-        Replace[nb, (Rule[First[opt], _]|RuleDelayed[First[opt], _]) -> opt,  {1}]
+        Replace[nb, optPattern@First[opt] -> opt,  {1}]
       ]
     ]
-NBSetOptions[opts : {Repeated[_Rule | _RuleDelayed, {2, Infinity}]}][nb_] := Fold[NBSetOptions[#2][#1]&, nb, opts]
-NBSetOptions[opts : Repeated[_Rule | _RuleDelayed, {2, Infinity}]] := NBSetOptions[{opts}]
-NBSetOptions[][nb_] := nb
+NBSetOptions[opts : {(_?optQ)..}][nb_] := Fold[NBSetOptions[#2][#1]&, nb, opts]
 
 
-NBDisableSpellCheck[nb_] := NBSetOptions[System`ShowAutoSpellCheck -> False][nb]
+NBDisableSpellCheck = NBSetOptions[System`ShowAutoSpellCheck -> False]
 
 
-NBDeleteCellTags[tags : {___String}][nb_, tags : {___String}] := Fold[NBDeleteCellTags[#2][#1]&, nb, tags]
+NBDeleteCellTags[tags : {___String}][nb_] := Fold[NBDeleteCellTags[#2][#1]&, nb, tags]
 NBDeleteCellTags[tag_String][nb_] :=
     ReplaceAll[
       DeleteCases[nb, CellTags -> (tag | {tag}), Infinity],
-      (CellTags -> (tags_List /; MemberQ[tags, tag])) :>
-          CellTags -> DeleteCases[tags, tag]
+      (CellTags -> (tags_List /; MemberQ[tags, tag])) :> (CellTags -> DeleteCases[tags, tag])
     ]
 
 
