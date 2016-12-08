@@ -38,6 +38,9 @@ RewriteNotebook::usage =
     "RewriteNotebook[f][file]\n" <>
     "RewriteNotebook[f][infile, outfile]";
 
+NBImport::usage = "NBImport[]";
+NBExport::usage = "NBExport[]";
+
 NBHideInput::usage = "NBHideInput[nb]";
 NBDeleteOutputByTag::usage = "NBDeleteOutputByTag[nb]";
 NBRemoveChangeTimes::usage = "NBRemoveChangeTimes[nb]";
@@ -220,18 +223,26 @@ MRun[code : _MCode, ver_String : ""] :=
 fileQ[_String | File[_String]] = True
 fileQ[_] = False
 
+NBImport[file_?fileQ] :=
+    Block[{$Context = "System`"},
+      Import[file, "NB"]
+    ]
+
+NBExport[file_?fileQ, nb_] :=
+    UsingFrontEnd@Module[{res},
+      CurrentValue[$FrontEndSession, DynamicUpdating] = False;
+      res = Export[file, nb, "NB"];
+      CurrentValue[$FrontEndSession, DynamicUpdating] = Inherited;
+      res
+    ]
+
 RewriteNotebook[f_][file_?fileQ] := RewriteNotebook[f][file, file]
 
 RewriteNotebook[f_][infile_?fileQ, outfile_?fileQ] :=
-    UsingFrontEnd@Module[{nb, res},
-      CurrentValue[$FrontEndSession, DynamicUpdating] = False;
-      Block[{$Context = "System`"},
-        nb = Import[infile, "NB"]
-      ];
+    Module[{nb},
+      nb = NBImport[infile];
       nb = f[nb];
-      res = Export[outfile, nb, "NB"];
-      CurrentValue[$FrontEndSession, DynamicUpdating] = Inherited;
-      res
+      NBExport[outfile, nb]
     ]
 
 
