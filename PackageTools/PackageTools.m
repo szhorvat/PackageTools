@@ -32,6 +32,13 @@ MRun[MCode[code], version]\
 
 MCode::usage = "MCode[code]";
 
+
+(* Paclet handling *)
+
+GetPI::usage = "GetPI[pacletFile]";
+MakePacletSiteMZ::usage = "MakePacletSiteMZ[directory]";
+
+
 (* Notebook processing *)
 
 RewriteNotebook::usage =
@@ -215,6 +222,37 @@ MRun[code : _MCode, ver_String : ""] :=
       versions = FindMVersions[ver];
       If[versions === {}, Return[$Failed]];
       MRun[code, First[versions]]
+    ]
+
+
+(********** Paclet handling **********)
+
+GetPI[pacletFile_?FileExistsQ] :=
+    Module[{tempDir, files},
+      Internal`WithLocalSettings[
+        tempDir = CreateDirectory[]
+        ,
+        files = ExtractArchive[pacletFile, tempDir, "*PacletInfo.m"];
+        If[Length[files] != 1, Return[$Failed]];
+        First@Import[First[files], {"Package", "HeldExpressions"}]
+        ,
+        DeleteDirectory[tempDir, DeleteContents -> True]
+      ]
+    ]
+
+MakePacletSiteMZ[dir_?DirectoryQ] :=
+    Module[{tempDir, pacletFiles, pis, ps, psz},
+      Internal`WithLocalSettings[
+        tempDir = CreateDirectory[]
+        ,
+        pis = GetPI /@ FileNames[FileNameJoin[{dir, "Paclets", "*.paclet"}]];
+        ps = FileNameJoin[{tempDir, "PacletSite.m"}];
+        Export[ps, Thread[PacletSite @@ pis, HoldComplete], {"Package", "HeldExpressions"}, "Comments" -> None];
+        psz = CreateArchive[ps, FileNameJoin[{tempDir, "PacletSite.zip"}]];
+        CopyFile[psz, FileNameJoin[{dir, "PacletSite.mz"}]];
+        ,
+        DeleteDirectory[tempDir, DeleteContents -> True]
+      ]
     ]
 
 
