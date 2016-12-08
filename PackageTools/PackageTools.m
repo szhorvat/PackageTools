@@ -60,6 +60,7 @@ NBRemoveOptions::usage = "NBRemoveOptions[{opts}][nb]";
 NBRemoveCellOptions::usage = "NBRemoveCellOptions[{opts}][nb]";
 NBFEProcess::usage = "NBFEProcess[f][nb]";
 
+OptPatt::usage = "OptPatt[name] is a pattern that matches name -> value or name :> value.";
 
 (* Flags to signal slave kernels *)
 Begin["`Flags`"]
@@ -294,8 +295,8 @@ optQ[_String :> _] = True
 optQ[_] = False
 
 (* make sure this won't be accidentally interpreted as a rule by functions like Replace *)
-optPattern[sym_Symbol] := (Rule|RuleDelayed)[sym|SymbolName[sym], _]
-optPattern[str_String] := (Rule|RuleDelayed)[Symbol[str]|str, _]
+OptPatt[sym_Symbol] := (Rule|RuleDelayed)[sym|SymbolName[sym], _]
+OptPatt[str_String] := (Rule|RuleDelayed)[Symbol[str]|str, _]
 
 (* experimental *)
 NBFEProcess[f_][nb_] :=
@@ -338,7 +339,7 @@ NBDeleteOutputByTag[nb_, tag_ : "DeleteOutput"] :=
 NBRemoveCellOptions[opt : _Symbol|_String] := NBRemoveCellOptions[{opt}]
 NBRemoveCellOptions[opts: {(_Symbol|_String)..}][nb_] :=
     ReplaceAll[nb,
-      Cell[start___, Alternatives @@ (optPattern /@ opts), end___] :> Cell[start, end]
+      Cell[start___, Alternatives @@ (OptPatt /@ opts), end___] :> Cell[start, end]
     ]
 
 
@@ -353,7 +354,7 @@ NBRemoveURL[nb_] :=
 
 
 NBRemoveOptions[optname : _Symbol|_String] := NBRemoveOptions[{optname}]
-NBRemoveOptions[optnames : {(_Symbol|_String)..}][nb_] := DeleteCases[nb, Alternatives @@ (optPattern /@ optnames)]
+NBRemoveOptions[optnames : {(_Symbol|_String)..}][nb_] := DeleteCases[nb, Alternatives @@ (OptPatt /@ optnames)]
 
 
 NBResetWindow = NBRemoveOptions[{WindowMargins, WindowSize}]
@@ -363,7 +364,7 @@ NBSetOptions[opt_?optQ][nb_] :=
     Module[{},
       If[Not@MemberQ[Keys@Options[nb], First[opt]],
         Append[nb, opt],
-        Replace[nb, optPattern@First[opt] -> opt,  {1}]
+        Replace[nb, OptPatt@First[opt] -> opt,  {1}]
       ]
     ]
 NBSetOptions[opts : {(_?optQ)..}][nb_] := Fold[NBSetOptions[#2][#1]&, nb, opts]
