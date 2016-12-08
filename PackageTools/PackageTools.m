@@ -14,17 +14,14 @@
 
 If[$VersionNumber < 10, Print["PackageTools requires Mathematica 10.0 or later."]; Abort[]]
 
-BeginPackage["PackageTools`"]
-(* Exported symbols added here with SymbolName::usage *)
+BeginPackage["PackageTools`", {"PacletManager`"}]
+
+(* Kernel control *)
 
 $MKernels::usage = "$MKernels";
-
 MKernel::usage = "MKernel[...]";
-
 MKernelQ::usage = "MKernelQ[mkernel]";
-
 DetectMVersions::usage = "DetectMVersions[]";
-
 FindMVersions::usage = "FindMVersions[version]";
 
 MRun::usage = "\
@@ -34,6 +31,8 @@ MRun[MCode[code], version]\
 ";
 
 MCode::usage = "MCode[code]";
+
+(* Notebook processing *)
 
 RewriteNotebook::usage =
     "RewriteNotebook[f][file]\n" <>
@@ -52,6 +51,7 @@ NBRemoveCellOptions::usage = "NBRemoveCellOptions[{opts}][nb]";
 NBFEProcess::usage = "NBFEProcess[f][nb]";
 
 
+(* Flags to signal slave kernels *)
 Begin["`Flags`"]
 
 If[Not@TrueQ[$MSlave],
@@ -63,7 +63,6 @@ End[] (* `Flags` *)
 
 
 Begin["`Private`"]
-
 
 (********** Evaluating using slave kernels **********)
 
@@ -330,7 +329,6 @@ NBDeleteCellTags[tag_String][nb_] :=
       DeleteCases[nb, CellTags -> (tag | {tag}), Infinity],
       (CellTags -> (tags_List /; MemberQ[tags, tag])) :> (CellTags -> DeleteCases[tags, tag])
     ]
-
 
 
 End[] (* `Private` *)
